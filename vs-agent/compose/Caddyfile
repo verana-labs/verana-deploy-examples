@@ -1,0 +1,5 @@
+# Replace agent.example.com with the host of PUBLIC_API_BASE_URL.
+# Caddy obtains and renews the TLS certificate itself.
+agent.example.com {
+    reverse_proxy vs-agent:3001
+}
