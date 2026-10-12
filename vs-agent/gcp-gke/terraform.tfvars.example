@@ -1,0 +1,6 @@
+project_id     = "my-project"
+region         = "europe-west1"
+cluster_name   = "agents"
+dns_zone_name  = "example-com"        # Cloud DNS zone resource name
+agent_hostname = "agent.example.com"
+acme_email     = "ops@example.com"

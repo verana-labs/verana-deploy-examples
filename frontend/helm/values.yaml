@@ -1,0 +1,45 @@
+# Verana frontend with the chart from verana-labs/verana-frontend (charts/), published as
+# oci://registry-1.docker.io/veranalabs/verana-frontend-chart.
+#   helm upgrade --install app oci://registry-1.docker.io/veranalabs/verana-frontend-chart \
+#     --version <version> --namespace verana -f values.yaml
+# The image is built once; the NEXT_PUBLIC_* values are substituted into the bundle at container start.
+
+global:
+  domain: example.com      # -> https://app.example.com
+name: verana-frontend
+host: app
+replicas: 1
+
+image:
+  repository: veranalabs/verana-front
+  tag: ""
+
+# The chart's default pins a node by hostname; clear it on your cluster.
+nodeSelector: {}
+
+env:
+  NEXT_PUBLIC_PORT: "3000"
+  NEXT_PUBLIC_VERANA_CHAIN_ID: vna-testnet-1
+  NEXT_PUBLIC_VERANA_CHAIN_NAME: VeranaTestnet1
+  NEXT_PUBLIC_VERANA_RPC_ENDPOINT: https://rpc.testnet.verana.network
+  NEXT_PUBLIC_VERANA_INDEXER_BASE_URL: https://idx.testnet.verana.network   # your indexer if you run one
+  NEXT_PUBLIC_VERANA_EXPLORER_URL: https://explorer.testnet.verana.network/Verana%20Testnet
+  NEXT_PUBLIC_VERANA_VISUALIZER_URL: https://vis.testnet.verana.network
+  NEXT_PUBLIC_VERANA_FAUCET_URL: https://faucet.testnet.verana.network
+  NEXT_PUBLIC_VERANA_SIGN_DIRECT_MODE: "true"
+  NEXT_PUBLIC_SESSION_LIFETIME_SECONDS: "86400"
+  NEXT_PUBLIC_LOW_BALANCE_WARN_UVNA: "1000000"
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: 500m
+
+ingress:
+  enabled: true
+  tlsSecret: app-tls
+  public:
+    enableCors: true

@@ -1,0 +1,7 @@
+location                = "westeurope"
+resource_group_name     = "agents"
+cluster_name            = "agents"
+dns_zone_name           = "example.com"
+dns_zone_resource_group = "dns"
+agent_record_name       = "agent"
+acme_email              = "ops@example.com"

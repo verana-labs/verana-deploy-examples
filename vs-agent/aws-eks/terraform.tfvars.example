@@ -1,0 +1,5 @@
+region         = "eu-west-1"
+cluster_name   = "agents"
+dns_zone_name  = "example.com"
+agent_hostname = "agent.example.com"
+acme_email     = "ops@example.com"

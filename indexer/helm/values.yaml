@@ -1,0 +1,63 @@
+# Verana indexer with the chart from verana-labs/verana-indexer (charts/), published as
+# oci://registry-1.docker.io/veranalabs/verana-indexer-chart.
+#   kubectl -n verana create secret generic indexer-db --from-literal=password="$(openssl rand -base64 24)"
+#   helm upgrade --install idx oci://registry-1.docker.io/veranalabs/verana-indexer-chart \
+#     --version <version> --namespace verana -f values.yaml
+# The indexer replays the chain from genesis on first start; on a chain with history this takes hours.
+
+global:
+  domain: example.com      # -> https://idx.example.com
+name: idx
+replicas: 1
+
+image:
+  repository: veranalabs/verana-indexer
+  tag: ""                  # empty = the chart version
+
+apiPort: 3001
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+nodeOptions: "--max-old-space-size=3072 --max-semi-space-size=64 --expose-gc"
+
+# PostgreSQL sidecar with a retained volume. Full chain history, about 1.4 GiB per month
+# plus about 3.1 GiB per million blocks already produced; volumes grow but never shrink.
+database:
+  enabled: true
+  host: localhost
+  user: verana
+  db: verana
+  pwd: ""
+  pwdSecret:
+    name: indexer-db
+    key: password
+  storage:
+    size: 50Gi
+    storageClassName: "<your storage class>"   # gp3, standard-rwo, managed-csi, csi-cinder-classic
+
+redis:
+  enabled: true
+  host: localhost
+
+ingress:
+  tlsSecret: idx-tls
+  public:
+    enableCors: true
+
+# Network and trust configuration (not modelled as chart values).
+extraEnv:
+  - name: CHAIN_ID
+    value: vna-testnet-1
+  - name: RPC_ENDPOINT
+    value: https://rpc.testnet.verana.network/     # your own node's RPC in production
+  - name: LCD_ENDPOINT
+    value: https://api.testnet.verana.network
+  - name: ECS_ECOSYSTEM_DIDS
+    value: did:web:ecs-ecosystem.testnet.verana.network
+  - name: LOGLEVEL
+    value: info

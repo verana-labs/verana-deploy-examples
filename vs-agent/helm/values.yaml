@@ -1,0 +1,111 @@
+# VS Agent on Kubernetes with the official chart.
+#   helm upgrade --install agent oci://registry-1.docker.io/veranalabs/vs-agent-chart \
+#     --version 2.0.0 --namespace agents -f values.yaml
+# Every "<...>" placeholder must be replaced. Secrets come from a pre-existing Secret
+# (create-secrets.sh); the chart creates none.
+
+global:
+  domain: example.com        # the ingress host is {{ name }}.{{ global.domain }}
+name: agent                  # -> https://agent.example.com, the DID is derived from it
+replicas: 1
+
+# ---- Verana network ----------------------------------------------------------------
+veranaCorporationId: "<your corporation id>"   # Corporation page of the frontend
+veranaRpcEndpointUrl: https://rpc.testnet.verana.network
+veranaIndexerBaseUrl: https://idx.testnet.verana.network
+veranaChainId: vna-testnet-1
+agentMode: standalone
+trustedEcsEcosystemDids: "did:web:ecs-ecosystem.testnet.verana.network"
+publicDidMethod: webvh
+
+# ---- Admin API -----------------------------------------------------------------------
+# internal: only callers inside the cluster (your backend at http://agent.agents.svc:3000).
+# corporation: external callers with signed requests; then set adminApiPublicUrl and the allowlist.
+adminApiAuthMode: internal
+adminApiPublicUrl: ""
+adminApiCorporationAllowedAccounts: ""
+
+# ---- image ---------------------------------------------------------------------------
+image:
+  repository: veranalabs/vs-agent
+  tag: "2.0.0"
+
+# ---- database (PostgreSQL sidecar, password from the Secret) --------------------------
+database:
+  enabled: true
+  user: vsagent
+  existingSecret: vs-agent-secrets
+  secretPwdKey: POSTGRES_PASSWORD
+
+# ---- storage ---------------------------------------------------------------------------
+# Storage class per provider: gp3 (AWS), standard-rwo (GKE), managed-csi (AKS),
+# csi-cinder-high-speed (OVHcloud, the chart default).
+storage:
+  size: 2Gi
+  storageClassName: "<your storage class>"
+
+# ---- ingress and TLS ----------------------------------------------------------------------
+# The chart annotates the ingress for the ClusterIssuer "letsencrypt-prod" on class "nginx".
+ingress:
+  tlsSecret: agent-tls
+  public:
+    enableCors: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# ---- environment -----------------------------------------------------------------------------
+extraEnv:
+  - name: VERANA_ACCOUNT_MNEMONIC
+    valueFrom:
+      secretKeyRef:
+        name: vs-agent-secrets
+        key: VERANA_ACCOUNT_MNEMONIC
+
+  # Claims of the ECS Service credential the agent issues to itself.
+  - name: ECS_CLAIMS_SERVICE_NAME
+    value: My Verifiable Service
+  - name: ECS_CLAIMS_SERVICE_TYPE
+    value: WEB_PORTAL
+  - name: ECS_CLAIMS_SERVICE_DESCRIPTION
+    value: A service made verifiable with VS Agent on the Verana testnet.
+  - name: ECS_CLAIMS_SERVICE_MINIMUM_AGE_REQUIRED
+    value: "0"
+  # Placeholders served by the agent itself; replace with your own resources later.
+  - name: ECS_CLAIMS_SERVICE_LOGO_URI
+    value: https://agent.example.com/vt/default/logo.svg
+  - name: ECS_CLAIMS_SERVICE_TERMS_AND_CONDITIONS_URI
+    value: https://agent.example.com/vt/default/terms.html
+  - name: ECS_CLAIMS_SERVICE_PRIVACY_POLICY_URI
+    value: https://agent.example.com/vt/default/privacy.html
+
+  # Claims the agent proposes for its ECS Organization credential (the validator may adjust them).
+  - name: ECS_CLAIMS_ORG_NAME
+    value: Example Company Ltd
+  - name: ECS_CLAIMS_ORG_LOGO_URI
+    value: https://agent.example.com/vt/default/logo.svg
+  - name: ECS_CLAIMS_ORG_REGISTRY_ID
+    value: "<your company registration number>"
+  - name: ECS_CLAIMS_ORG_ADDRESS
+    value: 1 Example Street, Example City
+  - name: ECS_CLAIMS_ORG_COUNTRY_CODE
+    value: CH
+
+  # Optional: deliver events to your backend.
+  # - name: EVENTS_WEBHOOK_URL
+  #   value: http://backend.default.svc:8080/vs-agent/events
+  # - name: EVENTS_WEBHOOK_API_KEY
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: vs-agent-secrets
+  #       key: EVENTS_WEBHOOK_API_KEY
+
+# ---- OpenID4VC (optional) -----------------------------------------------------------------------
+# Put openid4vc.json in a Secret and name it here; the chart mounts it and sets the location variable.
+openid4vc:
+  existingSecret: ""
