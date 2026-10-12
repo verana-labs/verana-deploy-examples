@@ -1,0 +1,61 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: terraform fmt and validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir:
+          - modules/k8s-addons
+          - vs-agent/aws-eks
+          - vs-agent/gcp-gke
+          - vs-agent/azure-aks
+          - vs-agent/ovh-mks
+          - node/vm/aws
+          - node/vm/gcp
+          - node/vm/azure
+          - node/vm/ovh
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.10.5"
+      - name: fmt
+        working-directory: ${{ matrix.dir }}
+        run: terraform fmt -check -recursive -diff
+      - name: validate
+        working-directory: ${{ matrix.dir }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  shell-and-yaml:
+    name: shellcheck and yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+      - name: yaml parses
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          files = [f for f in glob.glob('**/*.yml', recursive=True) + glob.glob('**/*.yaml', recursive=True)
+                   if '/.terraform/' not in f]
+          for f in files:
+              with open(f) as fh:
+                  list(yaml.safe_load_all(fh))
+          print(f"{len(files)} YAML files parse")
+          PY
+      - name: compose config
+        working-directory: vs-agent/compose
+        run: cp .env.example .env && docker compose config -q

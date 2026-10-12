@@ -1,0 +1,46 @@
+# Verana graph with the chart from verana-labs/verana-graph (charts/verana-graph), published as
+# oci://registry-1.docker.io/veranalabs/verana-graph-chart.
+#   kubectl -n verana create secret generic graph-db --from-literal=password="$(openssl rand -base64 24)"
+#   helm upgrade --install graph oci://registry-1.docker.io/veranalabs/verana-graph-chart \
+#     --version <version> --namespace verana -f values-graph.yaml
+
+image:
+  repository: veranalabs/verana-graph
+  tag: ""                  # empty = the chart appVersion
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+config:
+  logLevel: info
+  indexerBaseUrl: http://idx:3001            # the indexer Service in the same namespace, or https://idx.example.com
+  fetchVpBodies: "true"
+  fetchGfDocBodies: "false"
+  trustRefreshIntervalMs: "300000"
+
+# PostgreSQL sidecar with a retained volume; password from an existing Secret (required).
+database:
+  enabled: true
+  user: verana_graph
+  db: verana_graph
+  pwdSecret:
+    name: graph-db
+    key: password
+  storage:
+    size: 5Gi
+    storageClassName: "<your storage class>"
+
+# This chart's ingress is generic: give it the host, the TLS secret and the cert-manager annotation.
+ingress:
+  enabled: true
+  className: nginx
+  host: graph.example.com
+  tlsSecret: graph-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  websocketTimeoutSeconds: 3600

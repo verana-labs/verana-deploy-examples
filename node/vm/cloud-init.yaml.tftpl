@@ -1,0 +1,107 @@
+#cloud-config
+# Verana node on Ubuntu 24.04. Rendered by Terraform with templatefile(); the same template serves
+# every provider, only data_device changes. Steps follow the "Join testnet" guide of docs.verana.io.
+package_update: true
+package_upgrade: true
+packages:
+  - jq
+  - curl
+  - wget
+  - lz4
+
+users:
+  - name: verana
+    system: true
+    shell: /bin/bash
+    home: /var/lib/verana
+
+write_files:
+  - path: /usr/local/bin/verana-update-peers
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      # Refreshes seeds and persistent peers from the published list.
+      set -euo pipefail
+      CONFIG=/var/lib/verana/.verana/config/config.toml
+      PEERS=$(curl -fsS "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/persistent_peers/${peers_file}" | jq -r '.persistent_peers')
+      sed -i.bak "s/^persistent_peers = .*/persistent_peers = \"$PEERS\"/" "$CONFIG"
+      sed -i.bak "s/^seeds = .*/seeds = \"$PEERS\"/" "$CONFIG"
+      sed -i.bak "s/^experimental_max_gossip_connections_to_persistent_peers = .*/experimental_max_gossip_connections_to_persistent_peers = 10/" "$CONFIG"
+      sed -i.bak "s/^experimental_max_gossip_connections_to_non_persistent_peers = .*/experimental_max_gossip_connections_to_non_persistent_peers = 10/" "$CONFIG"
+      echo "peers set to: $PEERS"
+
+  - path: /etc/systemd/system/veranad.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Verana Daemon
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=verana
+      WorkingDirectory=/var/lib/verana
+      ExecStart=/usr/local/bin/veranad start --home /var/lib/verana/.verana
+      Restart=always
+      RestartSec=3
+      LimitNOFILE=65535
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # 1. data volume at /var/lib/verana (format once, mount by UUID)
+  - |
+    set -euo pipefail
+    DEV="${data_device}"
+    for _ in $(seq 1 30); do [ -e "$DEV" ] && break; sleep 2; done
+    if ! blkid "$DEV" >/dev/null 2>&1; then mkfs.ext4 -L verana "$DEV"; fi
+    UUID=$(blkid -s UUID -o value "$DEV")
+    mkdir -p /var/lib/verana
+    grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /var/lib/verana ext4 defaults,nofail 0 2" >> /etc/fstab
+    mount -a
+    chown verana:verana /var/lib/verana
+
+  # 2. veranad binary from the published manifest
+  - |
+    set -euo pipefail
+    cd /tmp
+    curl -fsS "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/binaries/manifest.json" -o manifest.json
+    BIN=$(jq -r '.["linux-amd64"]' manifest.json)
+    wget -q "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/binaries/$BIN"
+    chmod +x "$BIN" && mv "$BIN" /usr/local/bin/veranad
+    veranad version
+
+  # 3. init, genesis, gas price, peers, optional snapshot
+  - |
+    set -euo pipefail
+    HOME_DIR=/var/lib/verana/.verana
+    if [ ! -f "$HOME_DIR/config/genesis.json" ]; then
+      sudo -u verana /usr/local/bin/veranad init "${moniker}" --chain-id "${chain_id}" --home "$HOME_DIR"
+      curl -fsS "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/config/genesis.json" -o "$HOME_DIR/config/genesis.json"
+      chown verana:verana "$HOME_DIR/config/genesis.json"
+      sed -i 's/^minimum-gas-prices = .*/minimum-gas-prices = "0.0025uvna"/' "$HOME_DIR/config/app.toml"
+      sed -i 's/^max_num_inbound_peers = .*/max_num_inbound_peers = 40/' "$HOME_DIR/config/config.toml"
+      sed -i 's/^max_num_outbound_peers = .*/max_num_outbound_peers = 20/' "$HOME_DIR/config/config.toml"
+      %{ if expose_rpc ~}
+      sed -i 's/^laddr = "tcp:\/\/127.0.0.1:26657"/laddr = "tcp:\/\/0.0.0.0:26657"/' "$HOME_DIR/config/config.toml"
+      sed -i '/^\[api\]/,/^\[/ s/^enable = false/enable = true/; /^\[api\]/,/^\[/ s/^address = "tcp:\/\/localhost:1317"/address = "tcp:\/\/0.0.0.0:1317"/' "$HOME_DIR/config/app.toml"
+      %{ endif ~}
+      %{ if pruned ~}
+      sed -i 's/^pruning = .*/pruning = "custom"/; s/^pruning-keep-recent = .*/pruning-keep-recent = "100"/; s/^pruning-interval = .*/pruning-interval = "10"/' "$HOME_DIR/config/app.toml"
+      %{ endif ~}
+      sudo -u verana /usr/local/bin/verana-update-peers
+      %{ if use_snapshot ~}
+      MANIFEST=/tmp/snapshot-manifest.json
+      if curl -fsS "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/snapshots/manifest.json" -o "$MANIFEST"; then
+        LATEST=$(jq -r '.latestSnapshot' "$MANIFEST")
+        wget -q -O /var/lib/verana/data.tar.gz "https://utc-public-bucket.s3.bhs.io.cloud.ovh.net/${chain_id}/snapshots/$LATEST"
+        tar -xzf /var/lib/verana/data.tar.gz -C "$HOME_DIR" && rm -f /var/lib/verana/data.tar.gz
+        chown -R verana:verana "$HOME_DIR"
+      fi
+      %{ endif ~}
+    fi
+
+  # 4. run
+  - systemctl daemon-reload
+  - systemctl enable --now veranad

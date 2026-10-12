@@ -1,0 +1,8 @@
+ovh_endpoint      = "ovh-eu"
+project_id        = "0123456789abcdef0123456789abcdef"
+region            = "GRA11"
+cluster_name      = "agents"
+node_flavor       = "b3-8"
+dns_zone          = "example.com"
+agent_record_name = "agent"
+acme_email        = "ops@example.com"

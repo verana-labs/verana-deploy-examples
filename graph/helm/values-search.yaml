@@ -1,0 +1,26 @@
+# Verana search UI with the chart from verana-labs/verana-search (charts/), published as
+# oci://registry-1.docker.io/veranalabs/verana-search-chart.
+#   helm upgrade --install search oci://registry-1.docker.io/veranalabs/verana-search-chart \
+#     --version <version> --namespace verana -f values-search.yaml
+# The same image serves any network; everything is read at runtime.
+
+global:
+  domain: example.com      # -> https://search.example.com
+name: verana-search
+host: search
+replicas: 1
+
+image:
+  repository: veranalabs/verana-search
+  tag: ""
+
+env:
+  GRAPH_BASE_URL: https://graph.example.com     # your graph, or https://graph.testnet.verana.network
+  RESOLVER_BASE_URL: https://idx.example.com    # your indexer, or https://idx.testnet.verana.network
+  NETWORK_LABEL: Testnet
+
+ingress:
+  enabled: true
+  tlsSecret: search-tls
+  public:
+    enableCors: true
